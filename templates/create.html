@@ -1,15 +1,125 @@
 {% extends 'base.html' %} {% block container %}
-<h2>Create</h2>
-<p>Create a new record in the MongoDB database collection.</p>
+<h2>New Words List</h2>
 <form method="POST" action="{{ url_for('create_post') }}">
-  <p>Your name: <input type="text" id="fname" name="fname" /><br /></p>
-  <p>
-    Message:
-    <textarea type="text" id="fmessage" name="fmessage"></textarea>
-  </p>
-  <p>
-    <a href="{{ url_for('read')}}">Cancel</a>
-    <input type="submit" name="post-btn" value="Post" />
-  </p>
+    <label for="name">Words List Name:</label>
+    <input type="text" id="name" name="name" value="{{ list_name }}" required />
+    <p>
+        {{msg}}
+    </p>
+
+    <!-- List of Words in Collection-->
+    <hr class="solid" />
+    <div>
+        <table id="list" name="words" width="100%">
+            <thead>
+                <th width="15%">Key</th>
+                <th width="15%">Notes</th>
+                <th width="15%">Pronounciation</th>
+                <th width="15%">Proficiency</th>
+                <th width="30%">Description</th>
+                <th width="7%"></th>
+            </thead>
+
+            <tbody>
+                {% for doc in docs %}
+                <tr>
+                    <td>
+                        <input type="text" id="key" name="key[]" 
+                            value="{{doc['key']}}" width="10%">
+                        </input>
+                    </td>
+
+                    <td>
+                        <input type="text" id="notes" name="notes[]" 
+                            value="{{doc['notes']}}">
+                        </input>
+                    </td>
+
+                    <td>
+                        <input type="text" id="pronounciation" name="pronounciation[]" 
+                            value="{{doc['pronounciation']}}">
+                        </input>
+                    </td>
+
+                    <td>
+                        <input type="number" id="proficiency" name="proficiency[]"
+                            min="1" max="5" 
+                            value="{{doc['proficiency']}}">
+                        </input>
+                    </td>
+
+                    <td>
+                        <textarea type="text" id="description" name="description[]">{{doc['description']}}</textarea>
+                    </td>
+
+                    <td>
+                        <button type="button" onclick="deleteRow(this)">Delete</button>
+                    </td>
+                </tr>
+                {%endfor%}
+            </tbody>
+        </table>
+    </div>
+
+    <hr class="solid" />
+    <button type="button" onclick="addRow()">Add Word</button>
+
+    <p>
+        <a href="{{ url_for('get_collections')}}">Cancel</a>
+        <input class="button" type="submit" name="post-btn" value="Create" />
+    </p>
 </form>
+
+<script>
+    function addRow()
+    {
+        var table = document.getElementById("list");
+        var row = table.insertRow(); // insert to the end, default -1
+        
+        // Define cells
+        var cells = new Array(5);
+        cells[0] = "key";
+        cells[1] = "notes";
+        cells[2] = "pronounciation";
+        cells[3] = "proficiency";
+        cells[4] = "description";
+
+        // Add cells
+        for (var i = 0; i < cells.length - 2; i++)
+        {
+            var newCell = row.insertCell();
+            newCell.style.width = 
+            // [] tells browser to p ut tags in an array
+            newCell.innerHTML = `<input type="text" id=${cells[i]} name=${cells[i]}[] width="10%"></input>`;
+        }
+
+        // Create proficiency field
+        var proficiency = row.insertCell();
+        proficiency.innerHTML = `<input 
+            type="number" 
+            id=${cells[3]} 
+            name=${cells[3]}[]
+            min="1" 
+            max="5" 
+            value="1">
+        </input>`;
+
+        // Create description field
+        var description = row.insertCell();
+        description.innerHTML = `<textarea type="text" id=${cells[4]} name=${cells[4]}[]></textarea>`;
+
+        // Add delete button
+        var delButton = row.insertCell();
+        delButton.innerHTML = `<button type="button" onclick="deleteRow(this)">Delete</button>`;
+    }
+
+    function deleteRow(index)
+    {
+        let verified = confirm("Do you really want to delete this word? Deletion cannot be undone.")
+        if (!verified) { return }
+        
+        var rowIndex = index.parentNode.parentNode.rowIndex;
+        document.getElementById("list").deleteRow(rowIndex);
+    }
+</script>
 {% endblock %}

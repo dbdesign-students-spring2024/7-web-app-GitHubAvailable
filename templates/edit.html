@@ -1,18 +1,329 @@
 {% extends 'base.html' %} {% block container %}
-<h2>Update</h2>
-<p>Edit a record in the MongoDB database collection.</p>
-<form method="POST" action="{{ url_for('edit_post', mongoid=mongoid) }}">
-  <p>
-    Your name:
-    <input type="text" id="fname" name="fname" value="{{doc.name}}" /><br />
-  </p>
-  <p>
-    Message:
-    <textarea id="fmessage" name="fmessage">{{doc.message}}</textarea>
-  </p>
-  <p>
-    <a href="{{ url_for('read')}}">Cancel</a>
-    <input type="submit" name="post-btn" value="Save" />
-  </p>
+<h2 id="collection_name">{{collection}}</h2>
+<p>
+    You may click <kbd>Save</kbd> beside each word to save them individually.
+    <kbd>Save All</kbd> could take more time when the list is long.
+</p>
+<form method="POST" action="{{ url_for('edit_post', collection=collection) }}">
+    <label for="name">Words List Name:</label>
+    <input type="text" id="name" name="name" value="{{collection}}" required />
+    <button type="button" id="rename" name="rename" onclick="renameColl()">Rename</button>
+
+    <!-- List of Words in Collection-->
+    <hr class="solid" />
+    <div id="words-list" collection="{{collection}}">
+        <table id="list" name="words" width="100%">
+            <thead>
+                <th width="15%">Key</th>
+                <th width="15%">Notes</th>
+                <th width="15%">Pronounciation</th>
+                <th width="15%">Proficiency</th>
+                <th width="20%">Description</th>
+                <th width="7%"></th>
+                <th width="7%"></th>
+            </thead>
+
+            <tbody>
+                {% for doc in docs %}
+                <tr id="{{doc['_id']}}">
+                    <td>
+                        <input type="text" id="key" name="key[]" 
+                            value="{{doc['key']}}" width="10%">
+                        </input>
+                    </td>
+
+                    <td>
+                        <input type="text" id="notes" name="notes[]" 
+                            value="{{doc['notes']}}">
+                        </input>
+                    </td>
+
+                    <td>
+                        <input type="text" id="pronounciation" name="pronounciation[]" 
+                            value="{{doc['pronounciation']}}">
+                        </input>
+                    </td>
+
+                    <td>
+                        <input type="number" id="proficiency" name="proficiency[]"
+                            min="1" max="5" 
+                            value="{{doc['proficiency']}}">
+                        </input>
+                    </td>
+
+                    <td>
+                        <textarea type="text" id="description" name="description[]">{{doc['description']}}</textarea>
+                    </td>
+
+                    <td>
+                        <button type="button" id="save" name="save[]" 
+                            onclick="saveRow(this)">
+                            Save
+                        </button>
+                    </td>
+
+                    <td>
+                        <button type="button" id="delete" name="delete[]" 
+                            onclick="deleteRow(this)">
+                            Delete
+                        </button>
+                    </td>
+                </tr>
+                {%endfor%}
+            </tbody>
+        </table>
+    </div>
+
+    <hr class="solid" />
+    <button type="button" onclick="addRow()">Add Word</button>
+
+    <p>
+        <a href="{{ url_for('get_collections')}}">Cancel</a>
+        <button type="button" name="saveAll" onclick="saveList()">Save All</button>
+    </p>
 </form>
+
+<script>
+    function renameColl(callback)
+    {
+        // Get new name.
+        let new_name = document.getElementById("name").value;
+
+        // Get old name.
+        title = document.getElementById("collection_name");
+        let old_name = title.innerHTML;
+        collection = document.getElementById("words-list");
+
+        if (new_name === old_name)
+        {
+            callback();
+            return;
+        }
+        
+        // Update page based on rename request.
+        renameDBCollection(old_name, new_name)
+            .then(status => {
+                // Rename the collection if status is true.
+                if (status) {
+                    title.innerHTML = new_name;
+                    collection.setAttribute("collection", new_name);
+                    history.pushState(null, null, `/edit/${new_name}`);
+                }
+                // Callback to make sure other function only starts after 
+                // complete the renaming.
+                callback();
+            });
+    }
+
+    function renameDBCollection(old_name, new_name)
+    {
+        return fetch(`/rename/${old_name}/${new_name}`)
+            .then(response => {
+                if (response.status === 404) {
+                    alert("Rename Failed: New name cannot be the same with existing words lists!");
+                    return false;
+                } else {
+                    return true;
+                }
+            });
+    }
+
+    function addRow()
+    {
+        table = document.getElementById("list");
+        row = table.insertRow(); // insert to the end, default -1
+        row._id = "";
+        
+        // Define cells.
+        cells = new Array(5);
+        cells[0] = "key";
+        cells[1] = "notes";
+        cells[2] = "pronounciation";
+        cells[3] = "proficiency";
+        cells[4] = "description";
+
+        // Add cells.
+        for (var i = 0; i < cells.length - 2; i++)
+        {
+            var newCell = row.insertCell();
+            newCell.innerHTML = `<input type="text" id=${cells[i]} name=${cells[i]}[]></input>`;
+        }
+
+        // Create proficiency field.
+        proficiency = row.insertCell();
+        proficiency.innerHTML = `<input 
+            type="number" 
+            id=${cells[3]} 
+            name=${cells[3]}[]
+            min="1" 
+            max="5" 
+            value="1">
+        </input>`;
+
+        // Create description field.
+        var description = row.insertCell();
+        description.innerHTML = `<textarea type="text" id=${cells[4]} name=${cells[4]}[] width="40%"></textarea>`;
+
+        // Add save button
+        var saveButton = row.insertCell();
+        // Set functions to sent save request.
+        saveButton.innerHTML = `<button type="button" id="save" name="save[]" onclick="saveRow(this)">Save</button>`;
+
+        // Add delete button.
+        delButton = row.insertCell();
+        delButton.innerHTML = `<button type="button" id="delete" name="delete[]" onclick="deleteRow(this)">Delete</button>`;
+    }
+
+    function saveRow(index)
+    {
+        // Extract data from the given row.
+        row = index.parentNode.parentNode;
+        mongoid = row.id;
+        data = {};
+
+        // Get collection name.
+        collection = document.getElementById("words-list").getAttribute("collection");
+
+        for (var i = 0; i < 5; i++)
+        {
+            // Get field in each cell.
+            cell = row.cells[i].firstElementChild;
+            
+            data[cell.id] = cell.value;
+        }
+
+        data["proficiency"] = Number(data["proficiency"]);
+
+        // Save document and get id of new document, if available.
+        saveDoc(collection, mongoid, data)
+            .then(function(newId)
+                {
+                    if (mongoid === "")
+                    {
+                        // Update id of the row that stores new document.
+                        row.id = newId;
+                    }
+                }
+            )
+            .catch(function(error) {
+                console.error('Error saving document:', error);
+            });
+    }
+
+    function saveDoc(collection, mongoid, data)
+    {
+        // Set promise for asynchronus method.
+        return new Promise(function(resolve, reject) {
+            jQuery.ajax({
+                type: "POST", 
+                url: `/save/${collection}/${mongoid}`, 
+                data: JSON.stringify(data), // stringify data.
+                contentType: "application/json; charset=utf-8", 
+                dataType: "text", 
+                success: function(data, status, docId) { 
+                    resolve(docId.statusText); 
+                }, 
+                error: function(xhr, status, error) {
+                    reject(error); // Reject the promise with the error
+                }
+            });
+        });
+    }
+
+    async function saveList()
+    {
+        // Check for rename.
+        await new Promise(resolve => {
+            renameColl(() => {
+                resolve(); // Resolve after the asynchronous operation completes
+            });
+        });
+
+        // Get collection name.
+        let collection = document.getElementById("words-list")
+            .getAttribute("collection");
+        console.log(collection)
+
+        // Create container for words list.
+        data = {
+            "update": [], 
+            "insert": []
+        };
+
+        // Get table.
+        table = document.getElementById("list");
+
+        // Extract table data.
+        // r = 1 skip header.
+        for (r = 1; r < table.rows.length; r++)
+        {
+            // Get row.
+            row = table.rows[r];
+            // Create container for document.
+            doc = {};
+
+            // Get data from each cell.
+            for (c = 0; c < 5; c++)
+            {
+                cell = row.cells[c].firstElementChild;
+                doc[cell.id] = cell.value;
+            }
+
+            doc['proficiency'] = Number(doc['proficiency']);
+
+            if (row.id === "")
+            {
+                // Push new document to insert list.
+                data['insert'].push(doc);
+                continue;
+            }
+
+            // Push an existing document to update list.
+            data["update"].push({
+                "_id": row.id, 
+                "info": doc
+            });
+        }
+
+        saveTableToDB(collection, data);
+    }
+
+    function saveTableToDB(collection, data)
+    {
+        jQuery.ajax({
+            type: "POST", 
+            url: `/edit/${collection}`, 
+            data: JSON.stringify(data), 
+            contentType: "application/json; charset=utf-8", 
+            dataType: "text", 
+            success: function(data) { 
+                window.location.reload();
+                "Succeed";
+            }
+        });
+    }
+
+    function deleteRow(index)
+    {
+        let verified = confirm("Do you really want to delete this word? Deletion cannot be undone.")
+        if (!verified) { return }
+        
+        // Get related info.
+        collection = document.getElementById("words-list").getAttribute("collection");
+        row = index.parentNode.parentNode;
+        mongoid = row.id;
+        rowIndex = row.rowIndex;
+
+        document.getElementById("list").deleteRow(rowIndex);
+
+        // Delete the document if present in database.
+        deleteDoc(collection, mongoid);
+    }
+
+    function deleteDoc(collection, mongoid)
+    {
+        jQuery.getJSON(`/delete/${collection}/${mongoid}`, 
+                       function(data) {});
+    }
+</script>
 {% endblock %}

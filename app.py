@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import io
 import os
 import sys
 import subprocess
 import datetime
+import json
 
-from flask import Flask, render_template, request, redirect, url_for, make_response
+from flask import Flask, render_template, request, redirect, url_for, make_response, send_file
 
 # import logging
 import sentry_sdk
@@ -18,6 +20,9 @@ import pymongo
 from pymongo.errors import ConnectionFailure
 from bson.objectid import ObjectId
 from dotenv import load_dotenv
+
+# import BeautifulSoup for table data extraction
+# import bs4
 
 # load credentials and configuration options from .env file
 # if you do not yet have a file named .env, make one based on the template in env.example
@@ -33,9 +38,9 @@ sentry_sdk.init(
     traces_sample_rate=1.0,
     # Set profiles_sample_rate to 1.0 to profile 100% of sampled transactions.
     # We recommend adjusting this value in production.
-    profiles_sample_rate=1.0,
+    # profiles_sample_rate=1.0, # Parameter not recognized
     integrations=[FlaskIntegration()],
-    traces_sample_rate=1.0,
+    # traces_sample_rate=1.0, # duplictated definition, cause error
     send_default_pii=True,
 )
 
@@ -60,6 +65,38 @@ except ConnectionFailure as e:
     sentry_sdk.capture_exception(e)  # send the error to sentry.io. delete if not using
     sys.exit(1)  # this is a catastrophic error, so no reason to continue to live
 
+# Define constants.
+BYTE_USAGE = "size"
+COUNT = "count"
+
+# Registered keys of a word.
+KEY = "key"
+NOTES = "notes"
+PRONOUNCE = "pronounciation"
+LEVEL = "proficiency"
+DETIAL = "description"
+
+WORD_KEYS = [
+    KEY, 
+    NOTES, 
+    PRONOUNCE, 
+    LEVEL, 
+    DETIAL
+]
+
+PAGE_KEY = "key[]"
+PAGE_NOTES = "notes[]"
+PAGE_PRONOUNCE = "pronounciation[]"
+PAGE_LEVEL = "proficiency[]"
+PAGE_DETIAL = "description[]"
+
+PAGE_WORD_KEYS = [
+    PAGE_KEY, 
+    PAGE_NOTES, 
+    PAGE_PRONOUNCE, 
+    PAGE_LEVEL, 
+    PAGE_DETIAL
+]
 
 # set up the routes
 
@@ -73,16 +110,27 @@ def home():
     return render_template("index.html")
 
 
-@app.route("/read")
-def read():
+@app.route("/collections")
+def get_collections():
     """
     Route for GET requests to the read page.
     Displays some information for the user with links to other pages.
     """
-    docs = db.exampleapp.find({}).sort(
-        "created_at", -1
-    )  # sort in descending order of created_at timestamp
-    return render_template("read.html", docs=docs)  # render the read template
+    # Get name of all collections.
+    colls: list[str] = db.list_collection_names()
+
+    # Create container to store info of each word list.
+    colls_info: dict[str : dict[str : int]] = {}
+    
+    # Get the size of each wordlist.
+    for coll in colls:
+        coll_info = db.command("collstats", coll)
+        colls_info[coll] = {BYTE_USAGE : coll_info[BYTE_USAGE], 
+                      COUNT : coll_info[COUNT]}
+    
+    return render_template("collections.html", 
+                           items=colls_info, 
+                           res_num=len(colls_info))  # render the read template
 
 
 @app.route("/create")
@@ -100,20 +148,55 @@ def create_post():
     Route for POST requests to the create page.
     Accepts the form submission data for a new document and saves the document to the database.
     """
-    name = request.form["fname"]
-    message = request.form["fmessage"]
+    # Create container to store data in words table.
+    data = {}
+    
+    # Extract data from words table.
+    for key in PAGE_WORD_KEYS:
+        data[key] = request.form.getlist(key)
+    
+    # Get number of words.
+    num_of_words = len(data[key])
+    
+    # Build the words list.
+    words = []
 
-    # create a new document with the data the user entered
-    doc = {"name": name, "message": message, "created_at": datetime.datetime.utcnow()}
-    db.exampleapp.insert_one(doc)  # insert a new document
+    # Group data by row.
+    for row_index in range(num_of_words):
+        word = {KEY : data[PAGE_KEY][row_index], 
+                NOTES : data[PAGE_NOTES][row_index], 
+                PRONOUNCE : data[PAGE_PRONOUNCE][row_index], 
+                LEVEL : int(data[PAGE_LEVEL][row_index]), 
+                DETIAL : data[PAGE_DETIAL][row_index], 
+                "created": datetime.datetime.now()}
+        words.append(word)
+    
+    # Get words list name.
+    name = request.form["name"]
+
+    # Check if collection already exists.
+    if name in db.list_collection_names():
+        msg = "Creation Failed: a word list with the same name already exists!"
+        return render_template("create.html", 
+                               msg=msg, 
+                               list_name=name, 
+                               docs=words)
+
+    # Create a new collection.
+    db.create_collection(name)
+    new_coll = db[name]
+
+    # Add data to collection.
+    if words:
+        new_coll.insert_many(words)
 
     return redirect(
-        url_for("read")
-    )  # tell the browser to make a request for the /read route
+        url_for("get_collections")
+    )  # tell the browser to make a request for the /collections route
 
 
-@app.route("/edit/<mongoid>")
-def edit(mongoid):
+@app.route("/edit/<collection>")
+def edit(collection):
     """
     Route for GET requests to the edit page.
     Displays a form users can fill out to edit an existing record.
@@ -121,54 +204,154 @@ def edit(mongoid):
     Parameters:
     mongoid (str): The MongoDB ObjectId of the record to be edited.
     """
-    doc = db.exampleapp.find_one({"_id": ObjectId(mongoid)})
+    docs = db[collection].find().sort("created", 1)
+    # doc = db.exampleapp.find_one({"_id": ObjectId(collection)})
     return render_template(
-        "edit.html", mongoid=mongoid, doc=doc
+        "edit.html", collection=collection, docs=docs
     )  # render the edit template
 
+@app.route("/rename/<old_name>/<new_name>")
+def rename(old_name, new_name):
+    """
+    Rename an existing collection.
+    
+    Parameters:
+    old_name (str): The current name of the collection.
+    new_name (str): The new name to be renamed.
+    """
+    if new_name in db.list_collection_names():
+        return "Failed: collection name already exists.", 404
+    
+    db[old_name].rename(new_name)
+    return "Succeed", 200
 
-@app.route("/edit/<mongoid>", methods=["POST"])
-def edit_post(mongoid):
+@app.route("/edit/<collection>", methods=["POST"])
+def edit_post(collection):
     """
     Route for POST requests to the edit page.
-    Accepts the form submission data for the specified document and updates the document in the database.
+    Accepts the form submission data for the specified 
+        document and updates the document in the database.
 
     Parameters:
+    collection (str): The MongoDB collection to be saved.
+    """
+    # Create container to store data in words table.
+    data = request.json
+    coll = db[collection]
+
+    # Update target document.
+    for doc in data['update']:
+        coll.update_one({ "_id": ObjectId(doc['_id']) }, 
+                        { "$set": doc['info'] })
+    
+    # Insert documents (cannot be empty).
+    if data['insert']:
+        coll.insert_many(data['insert'])
+
+    return "Succeed"
+
+@app.route("/save/<collection>/", methods=["POST"])
+@app.route("/save/<collection>/<mongoid>", methods=["POST"])
+def save_document(collection, mongoid=""):
+    """
+    Route for POST requests to update/save a document.
+    Accepts the row data for the specified document and updates the document in the database.
+
+    Parameters:
+    collection (str): collection (Collection): The collection to be modified.
     mongoid (str): The MongoDB ObjectId of the record to be edited.
     """
-    name = request.form["fname"]
-    message = request.form["fmessage"]
+    # Extract document to be saved.
+    doc = request.json
 
-    doc = {
-        # "_id": ObjectId(mongoid),
-        "name": name,
-        "message": message,
-        "created_at": datetime.datetime.utcnow(),
-    }
+    if collection not in db.list_collection_names():
+        return "Failed: target collection does not exist."
 
-    db.exampleapp.update_one(
-        {"_id": ObjectId(mongoid)}, {"$set": doc}  # match criteria
-    )
+    # Get the collection to be modified.
+    coll = db[collection]
 
-    return redirect(
-        url_for("read")
-    )  # tell the browser to make a request for the /read route
+    if mongoid:
+        # Update existing document.
+        coll.update_one({ "_id": ObjectId(mongoid) }, 
+                        { "$set": doc })
+        print(coll.find_one({ "_id": ObjectId(mongoid) }))
+        return "Succeed"
+
+    # Add create time.
+    doc['created'] = datetime.datetime.now()
+
+    # Add new document to database.
+    doc_id = coll.insert_one(doc).inserted_id
+
+    return "Succeed", str(doc_id)
 
 
-@app.route("/delete/<mongoid>")
-def delete(mongoid):
+@app.route("/delete/<collection>")
+def delete(collection):
     """
     Route for GET requests to the delete page.
-    Deletes the specified record from the database, and then redirects the browser to the read page.
+    Deletes the specified collection from the database, and then redirects the browser to the read page.
 
     Parameters:
-    mongoid (str): The MongoDB ObjectId of the record to be deleted.
+    collection (str): The MongoDB Collection to be deleted.
     """
-    db.exampleapp.delete_one({"_id": ObjectId(mongoid)})
+    # Delete the collection.
+    db[collection].drop()
+    # db.exampleapp.delete_one({"_id": ObjectId(collection)})
     return redirect(
-        url_for("read")
-    )  # tell the web browser to make a request for the /read route.
+        url_for("get_collections")
+    )  # tell the web browser to make a request for the /get_collections route.
 
+@app.route("/delete/<collection>/<mongoid>")
+def delete_document(collection, mongoid):
+    """
+    Route for GET requests to delete an document.
+    Delete a document, return true if succeed, false record not found.
+    
+    Parameters:
+    collection (Collection): The collection that contains 
+        the document to be deleted.
+    mongoid (str): The MongoDB ObjectId of the document to be deleted.
+    """
+    filter = {"_id": ObjectId(mongoid)}
+    
+    if not db[collection].find_one(filter):
+        # Document not exist.
+        return "Failed: the document does not exist!"
+    
+    # Delete the matched document.
+    db[collection].delete_one(filter)
+
+    return "Succeed"
+
+@app.route("/download/<collection>")
+def download(collection):
+    """
+    Route for GET requests to download the specified collection.
+    Return the data in the collection as a file to be download.
+    
+    Parameters:
+    collection (Collection): the collection to be downloaded."""
+    # Define filter.
+    filter = {"_id": 0, 
+              "created": 0 }
+    
+    # Extract data from the collection.
+    data = list(db[collection].find({}, filter))
+
+    # Convert data to JSON stirng.
+    content = json.dumps(data, 
+                         ensure_ascii=False, 
+                         indent=4)
+    
+    # Get filename.
+    filename = f"{collection}.json"
+    print(filename)
+
+    return send_file(io.BytesIO(content.encode()), 
+                     mimetype="application/json", 
+                     as_attachment=True, 
+                     attachment_filename=filename)
 
 @app.route("/webhook", methods=["POST"])
 def webhook():

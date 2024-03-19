@@ -2,10 +2,18 @@
 
 {% block container %}
 <h2>Welcome!</h2>
-<p>Welcome to the Flask app. This is the home page. Here are a few links to example pages you might find interesting.
+<p>
+    Welcome to Words List Manager Lite. A simple words list manager 
+    that can help you create, edit, and download word lists for my 
+    application, WordsHelper (coming soon). At here, you can: 
     <ul>
-        <li><a href="{{ url_for('read')}}">a page that displays information pulled from a MongoDB database collection</a></li>
-        <li><a href="{{ url_for('create')}}">a page with a form you can submit to create a new record in a MongoDB collection</a></li>
+        <li>
+            <a href="{{ url_for('create')}}">Create a words list</a>
+        </li>
+
+        <li>
+            <a href="{{ url_for('get_collections')}}">View/edit current words lists</a>
+        </li>
     </ul>
 </p>
 {% endblock %}

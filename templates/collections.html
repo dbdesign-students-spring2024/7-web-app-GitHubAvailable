@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block container %}
+<h2>Words Lists</h2>
+<p> 
+    {% for item in items %}
+    <div>
+        <hr class="solid" />
+        <p><b>{{item}}</b></p>
+        <p class="post">
+            {{items[item]['count']}} word(s), {{items[item]['size']}} bytes used.
+
+            <a href="{{ url_for('edit', collection=item) }}">Edit</a> 
+            | <a href="{{ url_for('delete', collection=item) }}">Delete</a>
+            | <a href="{{ url_for('download', collection=item) }}">Download</a>
+            <br/>
+        </p>
+    </div>
+    {%endfor%}
+
+    <div>
+        <hr class="solid" />
+        <p class="footnote">
+            {{ res_num }} words list(s) found.
+        </p>
+    </div>
+</p>
+{% endblock %}
