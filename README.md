@@ -35,6 +35,12 @@ Note that as users can manage words lists and edit the data in each words lists,
 ### Versions Available
 Web-Deployed: [(NYU i6 server)](https://i6.cims.nyu.edu/~hl4963/7-web-app-GitHubAvailable/flask.cgi/).
 
+**Warning:** this version is intended to be an personal tool based on local computer, deploying it on public 
+server, depending on the database version and permission, may have unexpected results (e.g. not having permission 
+to delete or rename certain collections). This [web deployment](#versions-available) is only for presentation purpose
+and may have limited functionalities due to permission limitations. A sample `local.env` file is attached 
+and can be used for `.env` for testing is full functionalities on a personal computer.
+
 ### Contributor
 This app is developed by entirely by me, Mark Liu: 
 + NetID: hl4963
