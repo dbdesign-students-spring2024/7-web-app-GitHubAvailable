@@ -33,7 +33,7 @@ Note that as users can manage words lists and edit the data in each words lists,
 + Of collections (words lists).
 
 ### Versions Available
-Web-Deployed: [(NYU i6 server)](https://i6.cims.nyu.edu/~hl4963/7-web-app-GitHubAvailable/flask.cgi).
+Web-Deployed: [(NYU i6 server)](https://i6.cims.nyu.edu/~hl4963/7-web-app-GitHubAvailable/flask.cgi/).
 
 ### Contributor
 This app is developed by entirely by me, Mark Liu: 

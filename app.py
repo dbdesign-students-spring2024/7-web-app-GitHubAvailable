@@ -4,11 +4,14 @@ import io
 import os
 import sys
 import subprocess
+import secrets
+from flask import session
 import datetime
 import json
 
-from flask import Flask, render_template, request, redirect, url_for, make_response, send_file
+from flask import Flask, render_template, request, redirect, url_for, make_response, send_file, flash
 
+from werkzeug.utils import secure_filename
 # import logging
 import sentry_sdk
 from sentry_sdk.integrations.flask import (
@@ -46,6 +49,9 @@ sentry_sdk.init(
 
 # instantiate the app using sentry for debugging
 app = Flask(__name__)
+
+# generate app secret key
+app.secret_key = secrets.token_hex(16) # os.getenv('SECRET_KEY')
 
 # # turn on debugging if in development mode
 # app.debug = True if os.getenv("FLASK_ENV", "development") == "development" else False
